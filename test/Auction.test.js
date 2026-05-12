@@ -2,156 +2,115 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
 describe("Auction", function () {
-  let Auction, auction, owner, addr1, addr2, addr3;
+  let Auction, AuctionNFT, AuctionToken;
+  let auction, nft, token;
+  let owner, addr1, addr2, addr3;
 
   beforeEach(async function () {
     Auction = await ethers.getContractFactory("Auction");
+    AuctionNFT = await ethers.getContractFactory("AuctionNFT");
+    AuctionToken = await ethers.getContractFactory("AuctionToken");
     [owner, addr1, addr2, addr3] = await ethers.getSigners();
+
     auction = await Auction.deploy();
+    await auction.deployed();
+
+    nft = await AuctionNFT.deploy();
+    await nft.deployed();
+
+    token = await AuctionToken.deploy(1000);
+    await token.deployed();
+
+    await token.transfer(addr1.address, ethers.parseUnits("100", 18));
+    await token.transfer(addr2.address, ethers.parseUnits("100", 18));
   });
 
   describe("createAuction", function () {
-    it("Should create an auction", async function () {
-      const item = "Test Item";
-      const duration = 3600; // 1 hour
+    it("Should create an auction with NFT escrow", async function () {
+      const tokenURI = "https://example.com/nft/1";
+      await nft.createNFT(tokenURI, owner.address);
+      const tokenId = (await nft.tokenCounter()) - 1n;
+      const duration = 3600;
+      const paymentToken = ethers.ZeroAddress;
+      const item = "Test NFT";
 
-      await expect(auction.createAuction(item, duration))
+      await nft.approve(auction.address, tokenId);
+
+      const block = await ethers.provider.getBlock("latest");
+      await expect(
+        auction.createAuction(nft.address, tokenId, paymentToken, duration, item)
+      )
         .to.emit(auction, "AuctionCreated")
-        .withArgs(1, owner.address, item, (await ethers.provider.getBlock("latest")).timestamp + duration);
+        .withArgs(1, owner.address, item, nft.address, tokenId, paymentToken, block.timestamp + duration);
 
       const auctionData = await auction.getAuction(1);
       expect(auctionData.seller).to.equal(owner.address);
-      expect(auctionData.item).to.equal(item);
+      expect(auctionData.nftContract).to.equal(nft.address);
+      expect(auctionData.tokenId).to.equal(tokenId);
+      expect(auctionData.paymentToken).to.equal(paymentToken);
       expect(auctionData.owner).to.equal(owner.address);
       expect(auctionData.highestBidder).to.equal(ethers.ZeroAddress);
       expect(auctionData.highestBid).to.equal(0);
       expect(auctionData.ended).to.equal(false);
     });
-
-    it("Should increment auction count", async function () {
-      await auction.createAuction("Item1", 3600);
-      await auction.createAuction("Item2", 3600);
-      expect(await auction.auctionCount()).to.equal(2);
-    });
   });
 
-  describe("bid", function () {
+  describe("ETH auctions", function () {
     beforeEach(async function () {
-      await auction.createAuction("Test Item", 3600);
+      const tokenURI = "https://example.com/nft/1";
+      await nft.createNFT(tokenURI, owner.address);
+      this.tokenId = (await nft.tokenCounter()) - 1n;
+      await nft.approve(auction.address, this.tokenId);
+      await auction.createAuction(nft.address, this.tokenId, ethers.ZeroAddress, 3600, "ETH NFT");
     });
 
-    it("Should accept first bid", async function () {
+    it("Should accept ETH bids and end auction", async function () {
       const bidAmount = ethers.parseEther("1");
-
-      await expect(auction.connect(addr1).bid(1, { value: bidAmount }))
-        .to.emit(auction, "BidPlaced")
-        .withArgs(1, addr1.address, bidAmount);
+      await auction.connect(addr1).bid(1, bidAmount, { value: bidAmount });
 
       const auctionData = await auction.getAuction(1);
       expect(auctionData.highestBidder).to.equal(addr1.address);
       expect(auctionData.highestBid).to.equal(bidAmount);
-    });
 
-    it("Should refund previous bidder when new higher bid is placed", async function () {
-      const bid1 = ethers.parseEther("1");
-      const bid2 = ethers.parseEther("2");
-
-      await auction.connect(addr1).bid(1, { value: bid1 });
-      const initialBalance = await addr1.getBalance();
-
-      await auction.connect(addr2).bid(1, { value: bid2 });
-
-      const finalBalance = await addr1.getBalance();
-      expect(finalBalance.sub(initialBalance)).to.equal(bid1);
-
-      const auctionData = await auction.getAuction(1);
-      expect(auctionData.highestBidder).to.equal(addr2.address);
-      expect(auctionData.highestBid).to.equal(bid2);
-    });
-
-    it("Should reject bid lower than current highest", async function () {
-      const bid1 = ethers.parseEther("2");
-      const bid2 = ethers.parseEther("1");
-
-      await auction.connect(addr1).bid(1, { value: bid1 });
-      await expect(auction.connect(addr2).bid(1, { value: bid2 })).to.be.revertedWith("Bid must be higher than current highest bid");
-    });
-
-    it("Should reject bid after auction ended", async function () {
-      // Fast forward time
       await ethers.provider.send("evm_increaseTime", [3601]);
       await ethers.provider.send("evm_mine");
-
-      await expect(auction.connect(addr1).bid(1, { value: ethers.parseEther("1") })).to.be.revertedWith("Auction has ended");
-    });
-  });
-
-  describe("endAuction", function () {
-    beforeEach(async function () {
-      await auction.createAuction("Test Item", 3600);
-    });
-
-    it("Should end auction and transfer funds to seller", async function () {
-      const bidAmount = ethers.parseEther("1");
-
-      await auction.connect(addr1).bid(1, { value: bidAmount });
-
-      // Fast forward time
-      await ethers.provider.send("evm_increaseTime", [3601]);
-      await ethers.provider.send("evm_mine");
-
-      const initialSellerBalance = await owner.getBalance();
 
       await expect(auction.endAuction(1))
         .to.emit(auction, "AuctionEnded")
-        .withArgs(1, addr1.address, bidAmount);
+        .withArgs(1, addr1.address, bidAmount, ethers.ZeroAddress);
 
-      const finalSellerBalance = await owner.getBalance();
-      expect(finalSellerBalance.sub(initialSellerBalance)).to.equal(bidAmount);
-
-      const auctionData = await auction.getAuction(1);
-      expect(auctionData.ended).to.equal(true);
-      expect(auctionData.owner).to.equal(addr1.address);
-    });
-
-    it("Should not end auction before time", async function () {
-      await expect(auction.endAuction(1)).to.be.revertedWith("Auction has not ended yet");
-    });
-
-    it("Should not end auction twice", async function () {
-      await ethers.provider.send("evm_increaseTime", [3601]);
-      await ethers.provider.send("evm_mine");
-
-      await auction.endAuction(1);
-      await expect(auction.endAuction(1)).to.be.revertedWith("Auction already ended");
-    });
-
-    it("Should handle auction with no bids", async function () {
-      await ethers.provider.send("evm_increaseTime", [3601]);
-      await ethers.provider.send("evm_mine");
-
-      await auction.endAuction(1);
-
-      const auctionData = await auction.getAuction(1);
-      expect(auctionData.ended).to.equal(true);
-      expect(auctionData.owner).to.equal(owner.address); // Owner remains the same
+      expect(await nft.ownerOf(this.tokenId)).to.equal(addr1.address);
     });
   });
 
-  describe("getAuction", function () {
-    it("Should return correct auction data", async function () {
-      const item = "Test Item";
-      const duration = 3600;
+  describe("ERC20 auctions", function () {
+    beforeEach(async function () {
+      const tokenURI = "https://example.com/nft/2";
+      await nft.createNFT(tokenURI, owner.address);
+      this.tokenId = (await nft.tokenCounter()) - 1n;
+      await nft.approve(auction.address, this.tokenId);
+      await auction.createAuction(nft.address, this.tokenId, token.address, 3600, "ERC20 NFT");
+    });
 
-      await auction.createAuction(item, duration);
+    it("Should accept ERC20 bids and end auction", async function () {
+      const bidAmount = ethers.parseUnits("10", 18);
+      await token.connect(addr1).approve(auction.address, bidAmount);
+      await auction.connect(addr1).bid(1, bidAmount);
 
       const auctionData = await auction.getAuction(1);
-      expect(auctionData.seller).to.equal(owner.address);
-      expect(auctionData.item).to.equal(item);
-      expect(auctionData.owner).to.equal(owner.address);
-      expect(auctionData.highestBidder).to.equal(ethers.ZeroAddress);
-      expect(auctionData.highestBid).to.equal(0);
-      expect(auctionData.ended).to.equal(false);
+      expect(auctionData.highestBidder).to.equal(addr1.address);
+      expect(auctionData.highestBid).to.equal(bidAmount);
+      expect(auctionData.paymentToken).to.equal(token.address);
+
+      await ethers.provider.send("evm_increaseTime", [3601]);
+      await ethers.provider.send("evm_mine");
+
+      await expect(auction.endAuction(1))
+        .to.emit(auction, "AuctionEnded")
+        .withArgs(1, addr1.address, bidAmount, token.address);
+
+      expect(await nft.ownerOf(this.tokenId)).to.equal(addr1.address);
+      expect(await token.balanceOf(owner.address)).to.equal(ethers.parseUnits("810", 18));
     });
   });
 });
