@@ -5,8 +5,9 @@ contract Auction {
     struct AuctionItem {
         address seller;
         string item;
+        address nftContract;
         address owner;
-        address highestBidder;
+        address highestBidder; 
         uint256 highestBid;
         uint256 endTime;
         bool ended;
@@ -24,6 +25,7 @@ contract Auction {
         auctions[auctionCount] = AuctionItem({
             seller: msg.sender,
             item: _item,
+            nftContract: address(0),
             owner: msg.sender,
             highestBidder: address(0),
             highestBid: 0,
@@ -66,6 +68,7 @@ contract Auction {
     function getAuction(uint256 _auctionId) public view returns (
         address seller,
         string memory item,
+        address nftContract,            
         address owner,
         address highestBidder,
         uint256 highestBid,
@@ -78,6 +81,7 @@ contract Auction {
             auction.item,
             auction.owner,
             auction.highestBidder,
+            auction.nftContract,
             auction.highestBid,
             auction.endTime,
             auction.ended
