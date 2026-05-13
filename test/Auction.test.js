@@ -21,6 +21,11 @@ describe("Auction", function () {
     token = await AuctionToken.deploy(1000);
     await token.deployed();
 
+    expect(await nft.name()).to.equal("Auction NFT ");
+    expect(await nft.symbol()).to.equal("ANFT");
+    expect(await token.name()).to.equal("Auction Token");
+    expect(await token.symbol()).to.equal("ATK");
+
     await token.transfer(addr1.address, ethers.parseUnits("100", 18));
     await token.transfer(addr2.address, ethers.parseUnits("100", 18));
   });
@@ -43,6 +48,7 @@ describe("Auction", function () {
         .to.emit(auction, "AuctionCreated")
         .withArgs(1, owner.address, item, nft.address, tokenId, paymentToken, block.timestamp + duration);
 
+      expect(await nft.ownerOf(tokenId)).to.equal(auction.address);
       const auctionData = await auction.getAuction(1);
       expect(auctionData.seller).to.equal(owner.address);
       expect(auctionData.nftContract).to.equal(nft.address);
@@ -97,6 +103,7 @@ describe("Auction", function () {
       await token.connect(addr1).approve(auction.address, bidAmount);
       await auction.connect(addr1).bid(1, bidAmount);
 
+      expect(await token.balanceOf(auction.address)).to.equal(bidAmount);
       const auctionData = await auction.getAuction(1);
       expect(auctionData.highestBidder).to.equal(addr1.address);
       expect(auctionData.highestBid).to.equal(bidAmount);

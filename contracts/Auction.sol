@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "./nftContract.sol";
+import "./ercToken.sol";
 
 contract Auction {
     struct AuctionItem {
@@ -46,23 +46,21 @@ contract Auction {
     );
 
     function createAuction(
-        address _nftContract,
+        AuctionNFT _nftContract,
         uint256 _tokenId,
         address _paymentToken,
         uint256 _duration,
         string memory _item
     ) public {
         require(_duration > 0, "Duration must be greater than zero");
-
-        IERC721 nft = IERC721(_nftContract);
-        require(nft.ownerOf(_tokenId) == msg.sender, "Not owner of NFT");
+        require(_nftContract.ownerOf(_tokenId) == msg.sender, "Not owner of NFT");
 
         auctionCount++;
 
         auctions[auctionCount] = AuctionItem({
             seller: msg.sender,
             item: _item,
-            nftContract: _nftContract,
+            nftContract: address(_nftContract),
             tokenId: _tokenId,
             paymentToken: _paymentToken,
             owner: msg.sender,
@@ -72,13 +70,13 @@ contract Auction {
             ended: false
         });
 
-        nft.transferFrom(msg.sender, address(this), _tokenId);
+        _nftContract.transferFrom(msg.sender, address(this), _tokenId);
 
         emit AuctionCreated(
             auctionCount,
             msg.sender,
             _item,
-            _nftContract,
+            address(_nftContract),
             _tokenId,
             _paymentToken,
             block.timestamp + _duration
@@ -95,7 +93,7 @@ contract Auction {
         } else {
             require(msg.value == 0, "Send ETH only for ETH auctions");
             require(
-                IERC20(auction.paymentToken).transferFrom(msg.sender, address(this), _amount),
+                AuctionToken(auction.paymentToken).transferFrom(msg.sender, address(this), _amount),
                 "ERC20 transfer failed"
             );
         }
@@ -118,7 +116,7 @@ contract Auction {
             payable(previousBidder).transfer(previousBid);
         } else {
             require(
-                IERC20(auction.paymentToken).transfer(previousBidder, previousBid),
+                AuctionToken(auction.paymentToken).transfer(previousBidder, previousBid),
                 "Refund token transfer failed"
             );
         }
@@ -136,19 +134,19 @@ contract Auction {
                 payable(auction.seller).transfer(auction.highestBid);
             } else {
                 require(
-                    IERC20(auction.paymentToken).transfer(auction.seller, auction.highestBid),
+                    AuctionToken(auction.paymentToken).transfer(auction.seller, auction.highestBid),
                     "Seller token transfer failed"
                 );
             }
 
-            IERC721(auction.nftContract).transferFrom(
+            AuctionNFT(auction.nftContract).transferFrom(
                 address(this),
                 auction.highestBidder,
                 auction.tokenId
             );
             auction.owner = auction.highestBidder;
         } else {
-            IERC721(auction.nftContract).transferFrom(
+            AuctionNFT(auction.nftContract).transferFrom(
                 address(this),
                 auction.seller,
                 auction.tokenId
