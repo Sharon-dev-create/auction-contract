@@ -1,5 +1,5 @@
-const { expect } = require("chai");
-const { ethers } = require("hardhat");
+import { expect } from "chai";
+import { ethers } from "hardhat";
 
 describe("Auction", function () {
   let Auction, AuctionNFT, AuctionToken;
@@ -13,13 +13,13 @@ describe("Auction", function () {
     [owner, addr1, addr2, addr3] = await ethers.getSigners();
 
     auction = await Auction.deploy();
-    await auction.deployed();
+    await auction.waitForDeployment();
 
     nft = await AuctionNFT.deploy();
-    await nft.deployed();
+    await nft.waitForDeployment();
 
     token = await AuctionToken.deploy(1000);
-    await token.deployed();
+    await token.waitForDeployment();
 
     expect(await nft.name()).to.equal("Auction NFT ");
     expect(await nft.symbol()).to.equal("ANFT");

@@ -1,6 +1,7 @@
 {
   "name": "auction-contract",
   "version": "1.0.0",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "test": "npx hardhat test"
@@ -9,9 +10,10 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "hh2",
     "@types/node": "^22.19.18",
-    "chai": "^6.2.2",
-    "hardhat": "^3.4.5",
+    "chai": "^4.3.7",
+    "hardhat": "^2.22.10",
     "ts-node": "^10.9.2",
     "typescript": "~5.8.0"
   },
@@ -42,6 +44,5 @@
     "ws": "^8.20.0",
     "zod": "^3.25.76"
   },
-  "description": "",
-  "type": "module"
+  "description": ""
 }
